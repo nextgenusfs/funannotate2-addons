@@ -1,0 +1,82 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "funannotate2_addons"
+version = "25.5.24"
+description = "funannotate2-addons: scripts/methods to enhance functional annotation of eukaryotic genomes"
+readme = {file = "README.md", content-type = "text/markdown"}
+authors = [
+    {name = "Jon Palmer", email = "nextgenusfs@gmail.com"}
+]
+requires-python = ">=3.7.0"
+dependencies = [
+    "packaging",
+    "requests",
+    "gfftk",
+    "gb-io"
+]
+license = {file = "LICENSE.md"}
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python",
+    "Operating System :: Unix",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+keywords = ["bioinformatics", "genome", "annotation"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --cov=funannotate2_addons"
+
+[project.urls]
+Homepage = "https://github.com/nextgenusfs/funannotate2-addons"
+Repository = "https://github.com/nextgenusfs/funannotate2-addons.git"
+
+[project.scripts]
+f2a = "funannotate2_addons.__main__:main"
+
+[tool.hatch.build]
+include = [
+  "funannotate2_addons/*.py",
+  "README.md",
+  "LICENSE.md"
+]
+exclude = [
+  "tests/*",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''/(\n  # Directories
+  \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
