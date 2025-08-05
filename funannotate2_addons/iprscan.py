@@ -377,14 +377,13 @@ def parse_iprscan_tsv(input_file, output_file=None, gene_dict=None):
 
             # Add GO terms
             for go_term in go_terms:
-                go_id, go_name = (
-                    go_term.split(":", 1) if ":" in go_term else (go_term, "")
-                )
-                if go_id and go_id not in [
+                # GO terms should be kept as whole (e.g., GO:0003677)
+                # Don't split GO terms on colon
+                if go_term and go_term not in [
                     g["id"] for g in annotations[protein_id]["go_terms"]
                 ]:
                     annotations[protein_id]["go_terms"].append(
-                        {"id": go_id, "name": go_name, "category": ""}
+                        {"id": go_term, "name": "", "category": ""}
                     )
 
             # Add pathways

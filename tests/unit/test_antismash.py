@@ -24,7 +24,7 @@ class TestAntismash(unittest.TestCase):
         self.sample_gbk_file = os.path.join(self.test_dir, "sample.gbk")
         with open(self.sample_gbk_file, "w") as f:
             f.write(
-                "LOCUS       sample_region001        5000 bp    DNA     linear   UNK 01-JAN-1980\n"
+                "LOCUS       sample_region001          50 bp    DNA     linear   UNK 01-JAN-1980\n"
             )
             f.write("DEFINITION  sample_region001\n")
             f.write("ACCESSION   sample_region001\n")
@@ -34,16 +34,16 @@ class TestAntismash(unittest.TestCase):
             f.write("  ORGANISM  .\n")
             f.write("            .\n")
             f.write("FEATURES             Location/Qualifiers\n")
-            f.write("     source          1..5000\n")
+            f.write("     source          1..50\n")
             f.write('                     /organism="Test organism"\n')
-            f.write("     region          1..5000\n")
+            f.write("     region          1..50\n")
             f.write('                     /region_number="1"\n')
             f.write('                     /product="T1PKS"\n')
             f.write('                     /candidate_cluster_number="1"\n')
             f.write(
                 '                     /detection_rule="(PKS_KS and (PKS_AT or ene_KS))"\n'
             )
-            f.write("     CDS             100..1500\n")
+            f.write("     CDS             10..30\n")
             f.write('                     /gene="gene1"\n')
             f.write('                     /locus_tag="gene1"\n')
             f.write('                     /product="polyketide synthase"\n')
@@ -53,12 +53,12 @@ class TestAntismash(unittest.TestCase):
             f.write(
                 '                     534.7, seeds: 2284, tool: rule-based-clusters)"\n'
             )
-            f.write('                     /translation="MTEST..."\n')
-            f.write("     CDS             2000..3000\n")
+            f.write('                     /translation="MTEST"\n')
+            f.write("     CDS             35..45\n")
             f.write('                     /gene="gene2"\n')
             f.write('                     /locus_tag="gene2"\n')
             f.write('                     /product="hypothetical protein"\n')
-            f.write('                     /translation="MHYPO..."\n')
+            f.write('                     /translation="MHYPO"\n')
             f.write("ORIGIN\n")
             f.write(
                 "        1 atgcgatcga tcgatcgatc gatcgatcga tcgatcgatc gatcgatcga\n"
@@ -92,28 +92,32 @@ class TestAntismash(unittest.TestCase):
 
     def test_parse_antismash_gbk(self):
         # Test parsing the sample GenBank file
-        clusters = parse_antismash_gbk(self.sample_gbk_file)
+        backbone_domains, backbone_subtype, backbone_enzymes, cluster_genes = (
+            parse_antismash_gbk(self.sample_gbk_file)
+        )
 
-        # Check that clusters were parsed correctly
-        self.assertEqual(len(clusters), 1)
+        # Check that the function returned valid data structures
+        self.assertIsInstance(backbone_domains, dict)
+        self.assertIsInstance(backbone_subtype, dict)
+        self.assertIsInstance(backbone_enzymes, dict)
+        self.assertIsInstance(cluster_genes, dict)
 
-        cluster = clusters[0]
-        self.assertEqual(cluster["region_number"], "1")
-        self.assertEqual(cluster["product"], "T1PKS")
-        self.assertEqual(cluster["candidate_cluster_number"], "1")
-        self.assertIn("detection_rule", cluster)
+        # Check that gene1 has domain annotations
+        self.assertIn("gene1", backbone_domains)
+        gene1_domains = backbone_domains["gene1"]
+        self.assertIsInstance(gene1_domains, list)
+        self.assertTrue(len(gene1_domains) > 0)
 
-        # Check genes in cluster
-        self.assertEqual(len(cluster["genes"]), 2)
+        # Check that the domain annotation contains PKS_KS
+        domain_annotation = gene1_domains[0]
+        self.assertIn("PKS_KS", domain_annotation)
+        self.assertIn("E-value: 1.2e-162", domain_annotation)
 
-        gene1 = cluster["genes"][0]
-        self.assertEqual(gene1["locus_tag"], "gene1")
-        self.assertEqual(gene1["product"], "polyketide synthase")
-        self.assertIn("sec_met_domain", gene1)
-
-        gene2 = cluster["genes"][1]
-        self.assertEqual(gene2["locus_tag"], "gene2")
-        self.assertEqual(gene2["product"], "hypothetical protein")
+        # Check cluster genes structure
+        self.assertIn("cluster_1", cluster_genes)
+        cluster_1_genes = cluster_genes["cluster_1"]
+        self.assertIn("gene1", cluster_1_genes)
+        self.assertIn("gene2", cluster_1_genes)
 
     def test_antismash_to_json(self):
         # Test converting to JSON
@@ -130,18 +134,23 @@ class TestAntismash(unittest.TestCase):
         with open(json_file, "r") as f:
             data = json.load(f)
 
-        # Check that the JSON data is correct
-        self.assertIn("gene1", data)
-        self.assertIn("gene2", data)
+        # Check that the JSON data has the expected structure
+        self.assertIn("clusters", data)
+        self.assertIn("backbone_domains", data)
+        self.assertIn("backbone_enzymes", data)
 
-        # Check gene1 annotations
-        gene1_data = data["gene1"]
-        self.assertEqual(gene1_data["product"], "polyketide synthase")
-        self.assertIn("antiSMASH", gene1_data["note"])
+        # Check that backbone_domains contains gene1
+        backbone_domains = data["backbone_domains"]
+        self.assertIn("gene1", backbone_domains)
 
-        # Check gene2 annotations (should not have antiSMASH annotations)
-        gene2_data = data["gene2"]
-        self.assertEqual(gene2_data["product"], "hypothetical protein")
+        # Check that gene1 has domain annotations
+        gene1_domains = backbone_domains["gene1"]
+        self.assertIsInstance(gene1_domains, list)
+        self.assertTrue(len(gene1_domains) > 0)
+
+        # Check cluster data structure
+        clusters = data["clusters"]
+        self.assertIsInstance(clusters, dict)
 
 
 if __name__ == "__main__":

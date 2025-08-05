@@ -60,16 +60,16 @@ EggNOG Mapper is a tool for fast functional annotation of novel sequences. This 
 
 ```bash
 # Basic usage
-f2a emapper -i /path/to/funannotate2_predict_folder --cpu 8
+f2a emapper -i /path/to/funannotate2_predict_folder --cpus 8
 
 # Specify output directory
-f2a emapper -i /path/to/funannotate2_predict_folder -o /path/to/output_dir --cpu 8
+f2a emapper -i /path/to/funannotate2_predict_folder -o /path/to/output_dir --cpus 8
 
 # Specify database
-f2a emapper -i /path/to/funannotate2_predict_folder --cpu 8 --database eggnog_proteins
+f2a emapper -i /path/to/funannotate2_predict_folder --cpus 8 --database eggnog_proteins
 
 # Export annotations to JSON
-f2a emapper -i /path/to/funannotate2_predict_folder --cpu 8 --json
+f2a emapper -i /path/to/funannotate2_predict_folder --cpus 8 --json
 ```
 
 The module will generate:
@@ -83,13 +83,13 @@ InterProScan is a tool that scans protein sequences for matches against the Inte
 
 ```bash
 # Basic usage
-f2a iprscan -i /path/to/funannotate2_predict_folder --cpu 8
+f2a iprscan -i /path/to/funannotate2_predict_folder --cpus  8
 
 # Specify output directory
-f2a iprscan -i /path/to/funannotate2_predict_folder -o /path/to/output_dir --cpu 8
+f2a iprscan -i /path/to/funannotate2_predict_folder -o /path/to/output_dir --cpus 8
 
 # Specify applications to run
-f2a iprscan -i /path/to/funannotate2_predict_folder --cpu 8 --applications "Pfam,SMART,CDD"
+f2a iprscan -i /path/to/funannotate2_predict_folder --cpus 8 --applications "Pfam,SMART,CDD"
 
 # Disable GO term lookup
 f2a iprscan -i /path/to/funannotate2_predict_folder --cpu 8 --no-goterms
@@ -101,19 +101,19 @@ antiSMASH is a tool for identifying and analyzing secondary metabolite biosynthe
 
 ```bash
 # Basic usage
-f2a antismash -i /path/to/funannotate2_predict_folder --cpu 8
+f2a antismash -i /path/to/funannotate2_predict_folder --cpus 8
 
 # Specify output directory
-f2a antismash -i /path/to/funannotate2_predict_folder -o /path/to/output_dir --cpu 8
+f2a antismash -i /path/to/funannotate2_predict_folder -o /path/to/output_dir --cpus 8
 
 # Specify taxonomy
-f2a antismash -i /path/to/funannotate2_predict_folder --cpu 8 --taxon fungi
+f2a antismash -i /path/to/funannotate2_predict_folder --cpus 8 --taxon fungi
 
 # Extract individual cluster files
-f2a antismash -i /path/to/funannotate2_predict_folder --cpu 8 --extract-clusters
+f2a antismash -i /path/to/funannotate2_predict_folder --cpus 8 --extract-clusters
 
 # Export cluster information to JSON
-f2a antismash -i /path/to/funannotate2_predict_folder --cpu 8 --json
+f2a antismash -i /path/to/funannotate2_predict_folder --cpus 8 --json
 ```
 
 The module will generate:
@@ -131,19 +131,19 @@ SignalP is a tool for predicting the presence and location of signal peptides in
 
 ```bash
 # Basic usage
-f2a signalp -i /path/to/funannotate2_predict_folder
+f2a siganlp6 -i /path/to/funannotate2_predict_folder
 
 # Specify output directory
-f2a signalp -i /path/to/funannotate2_predict_folder -o /path/to/output_dir
+f2a siganlp6 -i /path/to/funannotate2_predict_folder -o /path/to/output_dir
 
 # Specify organism group
-f2a signalp -i /path/to/funannotate2_predict_folder --organism euk
+f2a siganlp6 -i /path/to/funannotate2_predict_folder --organism other
 
 # Generate plots
-f2a signalp -i /path/to/funannotate2_predict_folder --plot
+f2a siganlp6 -i /path/to/funannotate2_predict_folder --plot
 
 # Export predictions to JSON
-f2a signalp -i /path/to/funannotate2_predict_folder --json
+f2a siganlp6 -i /path/to/funannotate2_predict_folder --json
 ```
 
 The module will generate:
