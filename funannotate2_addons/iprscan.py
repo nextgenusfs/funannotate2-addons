@@ -508,6 +508,10 @@ def iprscan_subparser(subparsers):
         help="Path to protein FASTA file (alternative to --input)",
     )
     input_group.add_argument(
+        "--parse",
+        help="Path to pre-computed InterProScan output file (XML or TSV) to parse (skips running InterProScan)",
+    )
+    input_group.add_argument(
         "-o", "--output", help="Output directory (default: input_dir/annotate_misc)"
     )
     input_group.add_argument(
@@ -519,7 +523,7 @@ def iprscan_subparser(subparsers):
     # InterProScan options
     iprscan_group = parser.add_argument_group("InterProScan options")
     iprscan_group.add_argument(
-        "--cpu", type=int, default=1, help="Number of CPU cores to use"
+        "--cpus", type=int, default=1, help="Number of CPU cores to use"
     )
     iprscan_group.add_argument(
         "--applications", help="Comma-separated list of applications to run"
@@ -592,9 +596,47 @@ def run_iprscan_cli(args):
     Args:
         args: argparse arguments
     """
+    # Handle parse-only mode
+    if args.parse:
+        if not os.path.isfile(args.parse):
+            logger.error(f"Parse file not found: {args.parse}")
+            return
+
+        # Get output directory
+        if args.output:
+            output_dir = args.output
+        else:
+            # Use the directory of the parse file
+            output_dir = os.path.dirname(args.parse) or os.getcwd()
+
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+
+        logger.info(f"Parsing pre-computed InterProScan results: {args.parse}")
+
+        # Parse InterProScan results
+        annotations_file = os.path.join(output_dir, "iprscan.annotations.txt")
+        annotations = parse_iprscan(args.parse, output_file=annotations_file)
+
+        if annotations:
+            logger.info(f"Parsed {len(annotations)} annotations from {args.parse}")
+            logger.info(f"Wrote annotations to {annotations_file}")
+
+            # Convert to JSON if requested
+            if args.json:
+                json_file = os.path.join(output_dir, "iprscan.json")
+                if iprscan_to_json(args.parse, json_file):
+                    logger.info(f"Wrote JSON annotations to {json_file}")
+                else:
+                    logger.error(f"Failed to write JSON annotations to {json_file}")
+        else:
+            logger.error(f"Failed to parse annotations from {args.parse}")
+
+        return
+
     # Check if at least one input option is provided
     if not args.input and not args.file:
-        logger.error("Either --input or --file must be specified")
+        logger.error("Either --input, --file, or --parse must be specified")
         return
 
     # Get input file
@@ -631,7 +673,7 @@ def run_iprscan_cli(args):
         input_file=input_file,
         output_prefix=output_prefix,
         iprscan_path=args.iprscan_path,
-        cpu=args.cpu,
+        cpu=args.cpus,
         applications=applications,
         goterms=args.goterms,
         pathways=args.pathways,

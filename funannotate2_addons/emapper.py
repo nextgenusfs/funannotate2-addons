@@ -724,8 +724,8 @@ def emapper_subparser(subparsers):
         help="Path to protein FASTA file (alternative to --input)",
     )
     input_group.add_argument(
-        "--annotations",
-        help="Path to pre-calculated eggNOG-mapper annotations file (.emapper.annotations) to parse",
+        "--parse",
+        help="Path to pre-computed eggNOG-mapper annotations file to parse (skips running eggnog-mapper)",
     )
     input_group.add_argument(
         "-o", "--output", help="Output directory (default: input_dir/annotate_misc)"
@@ -842,14 +842,14 @@ def run_emapper_cli(args):
         args: argparse arguments
     """
     # Check if at least one input option is provided
-    if not args.input and not args.file and not args.annotations:
-        logger.error("Either --input, --file, or --annotations must be specified")
+    if not args.input and not args.file and not args.parse:
+        logger.error("Either --input, --file, or --parse must be specified")
         return
 
     # Handle pre-calculated annotations file
-    if args.annotations:
-        if not os.path.isfile(args.annotations):
-            logger.error(f"Annotations file not found: {args.annotations}")
+    if args.parse:
+        if not os.path.isfile(args.parse):
+            logger.error(f"Annotations file not found: {args.parse}")
             return
 
         # Get output directory
@@ -857,13 +857,13 @@ def run_emapper_cli(args):
             output_dir = args.output
         else:
             # Use the directory of the annotations file
-            output_dir = os.path.dirname(args.annotations) or os.getcwd()
+            output_dir = os.path.dirname(args.parse) or os.getcwd()
 
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
 
         # Set output prefix based on the annotations file name
-        base_name = os.path.basename(args.annotations)
+        base_name = os.path.basename(args.parse)
         if base_name.endswith(".emapper.annotations"):
             prefix = base_name[: -len(".emapper.annotations")]
         else:
@@ -876,27 +876,27 @@ def run_emapper_cli(args):
         # Use the custom formatter via startLogging
         log = startLogging(logfile=log_file)
 
-        log.info(f"Parsing pre-calculated annotations file: {args.annotations}")
+        log.info(f"Parsing pre-calculated annotations file: {args.parse}")
 
         # Parse annotations
         funannotate_file = f"{output_prefix}.annotations.txt"
         annotations = parse_emapper_annotations(
-            args.annotations, output_file=funannotate_file
+            args.parse, output_file=funannotate_file
         )
 
         if annotations:
-            log.info(f"Parsed {len(annotations)} annotations from {args.annotations}")
+            log.info(f"Parsed {len(annotations)} annotations from {args.parse}")
             log.info(f"Wrote annotations to {funannotate_file}")
 
             # Convert to JSON if requested
             if args.json:
                 json_file = os.path.join(output_dir, f"{prefix}.json")
-                if emapper_to_json(args.annotations, json_file):
+                if emapper_to_json(args.parse, json_file):
                     log.info(f"Wrote JSON annotations to {json_file}")
                 else:
                     log.error(f"Failed to write JSON annotations to {json_file}")
         else:
-            log.error(f"Failed to parse annotations from {args.annotations}")
+            log.error(f"Failed to parse annotations from {args.parse}")
 
         return
 

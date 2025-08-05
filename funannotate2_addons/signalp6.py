@@ -41,71 +41,71 @@ def get_version(signalp_path):
 
 def run_signalp(
     input_file,
-    output_prefix,
+    output_dir,
     signalp_path="signalp6",
-    organism="euk",
-    format="short",
-    plot=False,
-    output_dir=None,
-    force=False,
+    organism="eukarya",
+    format="txt",
+    mode="fast",
+    bsize=10,
+    write_procs=8,
 ):
     """
     Run SignalP 6.0 on a protein FASTA file.
 
     Args:
         input_file (str): Path to input protein FASTA file
-        output_prefix (str): Prefix for output files
-        signalp_path (str): Path to signalp6 executable
-        organism (str): Organism group (euk, arch, gram+, gram-)
-        format (str): Prediction format (short, long)
-        plot (bool): Generate plots
         output_dir (str): Directory for output files
-        force (bool): Force overwrite of existing files
+        signalp_path (str): Path to signalp6 executable
+        organism (str): Organism group (eukarya, other, euk)
+        format (str): Output format (txt, png, eps, all, none)
+        mode (str): Prediction mode (fast, slow, slow-sequential)
+        bsize (int): Batch size for prediction
+        write_procs (int): Number of parallel processes for writing output
 
     Returns:
-        str: Path to the output file
+        str: Path to the main output file (prediction_results.txt)
     """
     # Check if input file exists
     if not os.path.isfile(input_file):
         logger.error(f"Input file not found: {input_file}")
         return None
 
-    # Create output directory if specified and it doesn't exist
-    if output_dir and not os.path.isdir(output_dir):
+    # Create output directory if it doesn't exist
+    if not os.path.isdir(output_dir):
         os.makedirs(output_dir, exist_ok=True)
 
-    # Build command
+    # Build command according to SignalP6 CLI
     cmd = [
         signalp_path,
         "--fastafile",
         input_file,
-        "--prefix",
-        output_prefix,
+        "--output_dir",
+        output_dir,
     ]
 
     # Add optional arguments
     if organism:
         cmd.extend(["--organism", organism])
-    if format == "long":
-        cmd.append("--verbose")
-    if plot:
-        cmd.append("--plot")
-    if output_dir:
-        cmd.extend(["--output", output_dir])
-    if force:
-        cmd.append("--force")
+    if format:
+        cmd.extend(["--format", format])
+    if mode:
+        cmd.extend(["--mode", mode])
+    if bsize:
+        cmd.extend(["--bsize", str(bsize)])
+    if write_procs:
+        cmd.extend(["--write_procs", str(write_procs)])
 
     # Run command and log it to the terminal
     log_command(cmd)
     try:
         # Redirect stdout and stderr to the log file
-        log_file = f"{output_prefix}.signalp.log"
+        log_file = os.path.join(output_dir, "signalp6.log")
         with open(log_file, "w") as log_fh:
             logger.info(f"Redirecting SignalP output to {log_file}")
             subprocess.run(cmd, check=True, stdout=log_fh, stderr=log_fh)
 
-        # Determine output file based on format
-        output_file = f"{output_prefix}_summary.signalp6"  # SignalP 6 format
+        # SignalP6 creates prediction_results.txt as the main output file
+        output_file = os.path.join(output_dir, "prediction_results.txt")
 
         if os.path.isfile(output_file):
             logger.info(f"SignalP completed successfully: {output_file}")
@@ -140,42 +140,59 @@ def parse_signalp(input_file, output_file=None, gene_dict=None):
 
     try:
         with open(input_file, "r") as f:
-            # Skip header lines
-            header_seen = False
             for line in f:
+                # Skip comment lines
                 if line.startswith("#"):
-                    if "ID" in line and "PREDICTION" in line and "PROB" in line:
-                        header_seen = True
                     continue
 
-                # Skip lines until we see the header
-                if not header_seen and not line.strip():
+                # Skip empty lines
+                if not line.strip():
                     continue
 
-                # Parse prediction line
-                fields = line.strip().split()
+                # Parse prediction line - SignalP6 uses tab-separated format
+                fields = line.strip().split("\t")
 
-                # Skip if not enough fields
-                if len(fields) < 3:
+                # Skip if not enough fields (need at least ID, Prediction, OTHER, SP columns)
+                if len(fields) < 4:
                     continue
 
-                # Get values
+                # Get values from SignalP6 format:
+                # ID, Prediction, OTHER, SP(Sec/SPI), [CS Position]
                 protein_id = fields[0]
-                prediction = fields[
-                    1
-                ]  # SP(Sec/SPI), LIPO(Sec/SPII), TAT(Tat/SPI), TATLIPO(Tat/SPII), OTHER
-                probability = float(fields[2])
+                prediction = fields[1]  # OTHER, SP, LIPO, TAT, TATLIPO, PILIN
+                other_prob = float(fields[2])
+                sp_prob = float(fields[3])
+
+                # Determine the main probability (highest confidence)
+                if prediction == "OTHER":
+                    probability = other_prob
+                else:
+                    probability = sp_prob
 
                 # Store prediction
                 predictions[protein_id] = {
                     "prediction": prediction,
                     "probability": probability,
                     "has_signal_peptide": prediction != "OTHER",
+                    "other_prob": other_prob,
+                    "sp_prob": sp_prob,
                 }
 
-                # Add cleavage site if available
-                if len(fields) > 3 and fields[3] != "-":
-                    predictions[protein_id]["cleavage_site"] = fields[3]
+                # Add cleavage site if available (SignalP6 format: "CS pos: 17-18. Pr: 0.9751")
+                if len(fields) > 4 and fields[4].strip():
+                    cs_info = fields[4].strip()
+                    if "CS pos:" in cs_info:
+                        # Extract position: "CS pos: 17-18. Pr: 0.9751"
+                        if ". Pr:" in cs_info:
+                            pos_part, prob_part = cs_info.split(". Pr:")
+                            pos_part = pos_part.replace("CS pos:", "").strip()
+                            prob_part = prob_part.strip()
+                            predictions[protein_id]["cleavage_site"] = pos_part
+                            predictions[protein_id]["cleavage_prob"] = float(prob_part)
+                        else:
+                            # Just position without probability
+                            pos_part = cs_info.replace("CS pos:", "").strip()
+                            predictions[protein_id]["cleavage_site"] = pos_part
 
         # Write to output file if specified
         if output_file:
@@ -185,12 +202,20 @@ def parse_signalp(input_file, output_file=None, gene_dict=None):
 
                 for protein_id, pred in predictions.items():
                     if pred["has_signal_peptide"]:
-                        out.write(
-                            f"{protein_id}\tnote\tSignalP:{pred['prediction']} prob={pred['probability']:.3f}"
-                        )
                         if "cleavage_site" in pred:
-                            out.write(f" cleavage_site={pred['cleavage_site']}")
-                        out.write("\n")
+                            # Extract the cleavage position to determine signal peptide range
+                            # CS pos: 17-18 means cleavage between 17 and 18, so signal peptide is 1-17
+                            cleavage_pos = pred["cleavage_site"]
+                            if "-" in cleavage_pos:
+                                end_pos = cleavage_pos.split("-")[
+                                    0
+                                ]  # Take the first number
+                                annotation = f"SignalP:1-{end_pos}"
+                            else:
+                                annotation = f"SignalP:{pred['prediction']}"
+                        else:
+                            annotation = f"SignalP:{pred['prediction']}"
+                        out.write(f"{protein_id}\tnote\t{annotation}\n")
 
         return predictions
 
@@ -293,7 +318,7 @@ def signalp_subparser(subparsers):
         subparsers: argparse subparsers object
     """
     parser = subparsers.add_parser(
-        "signalp",
+        "signalp6",
         description="Run SignalP 6.0 and parse results",
         help="Run SignalP 6.0 and parse results",
     )
@@ -311,6 +336,10 @@ def signalp_subparser(subparsers):
         help="Path to protein FASTA file (alternative to --input)",
     )
     input_group.add_argument(
+        "--parse",
+        help="Path to pre-computed SignalP output file to parse (skips running SignalP)",
+    )
+    input_group.add_argument(
         "-o", "--output", help="Output directory (default: input_dir/annotate_misc)"
     )
     input_group.add_argument(
@@ -321,19 +350,33 @@ def signalp_subparser(subparsers):
     signalp_group = parser.add_argument_group("SignalP options")
     signalp_group.add_argument(
         "--format",
-        default="short",
-        choices=["short", "long"],
-        help="Prediction format (long=verbose)",
+        default="none",
+        choices=["txt", "png", "eps", "all", "none"],
+        help="Type of single-sequence output files (none=summary only, txt=tabular, png/eps=plots)",
     )
     signalp_group.add_argument(
         "--organism",
-        default="euk",
-        choices=["euk", "arch", "gram+", "gram-"],
-        help="Organism group",
+        default="eukarya",
+        choices=["eukarya", "other", "euk"],
+        help="Organism group (eukarya/euk limits predictions to Sec/SPI)",
     )
-    signalp_group.add_argument("--plot", action="store_true", help="Generate plots")
     signalp_group.add_argument(
-        "--force", action="store_true", help="Force overwrite of existing files"
+        "--mode",
+        default="fast",
+        choices=["fast", "slow", "slow-sequential"],
+        help="Prediction mode (fast=smaller model, slow=full model)",
+    )
+    signalp_group.add_argument(
+        "--bsize",
+        type=int,
+        default=10,
+        help="Batch size for prediction (adjust for memory usage)",
+    )
+    signalp_group.add_argument(
+        "--write_procs",
+        type=int,
+        default=8,
+        help="Number of parallel processes for writing output files",
     )
 
     # Output format options
@@ -353,9 +396,47 @@ def run_signalp_cli(args):
     Args:
         args: argparse arguments
     """
+    # Handle parse-only mode
+    if args.parse:
+        if not os.path.isfile(args.parse):
+            logger.error(f"Parse file not found: {args.parse}")
+            return
+
+        # Get output directory
+        if args.output:
+            output_dir = args.output
+        else:
+            # Use the directory of the parse file
+            output_dir = os.path.dirname(args.parse) or os.getcwd()
+
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+
+        logger.info(f"Parsing pre-computed SignalP results: {args.parse}")
+
+        # Parse SignalP results
+        annotations_file = os.path.join(output_dir, "signalp.annotations.txt")
+        predictions = parse_signalp(args.parse, output_file=annotations_file)
+
+        if predictions:
+            logger.info(f"Parsed {len(predictions)} predictions from {args.parse}")
+            logger.info(f"Wrote annotations to {annotations_file}")
+
+            # Convert to JSON if requested
+            if args.json:
+                json_file = os.path.join(output_dir, "signalp.json")
+                if signalp_to_json(args.parse, json_file):
+                    logger.info(f"Wrote JSON predictions to {json_file}")
+                else:
+                    logger.error(f"Failed to write JSON predictions to {json_file}")
+        else:
+            logger.error(f"Failed to parse predictions from {args.parse}")
+
+        return
+
     # Check if at least one input option is provided
     if not args.input and not args.file:
-        logger.error("Either --input or --file must be specified")
+        logger.error("Either --input, --file, or --parse must be specified")
         return
 
     # Get input file
@@ -379,7 +460,7 @@ def run_signalp_cli(args):
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
-    # Set output prefix
+    # Set output prefix for annotation files
     output_prefix = os.path.join(output_dir, "signalp")
 
     # We'll use the module-level logger which is already initialized
@@ -387,13 +468,13 @@ def run_signalp_cli(args):
     # Run SignalP
     output_file = run_signalp(
         input_file=input_file,
-        output_prefix=output_prefix,
+        output_dir=output_dir,
         signalp_path=args.signalp_path,
         organism=args.organism,
         format=args.format,
-        plot=args.plot,
-        output_dir=output_dir,
-        force=args.force,
+        mode=args.mode,
+        bsize=args.bsize,
+        write_procs=args.write_procs,
     )
 
     if output_file:
@@ -432,7 +513,7 @@ if __name__ == "__main__":
     signalp_subparser(subparsers)
     args = parser.parse_args()
 
-    if args.command == "signalp":
+    if args.command == "signalp6":
         run_signalp_cli(args)
     else:
         parser.print_help()

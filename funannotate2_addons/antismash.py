@@ -302,16 +302,22 @@ def parse_antismash_gbk(
 
                                 # Extract comprehensive annotation information
                                 annotations = []
+                                domains_found = {}  # Track domains to consolidate info
 
                                 # Extract SMCOGs
                                 if "gene_functions" in feature_quals:
                                     for gene_func in feature_quals["gene_functions"]:
+                                        # Clean up multi-line qualifiers by removing newlines and extra whitespace
+                                        gene_func_clean = " ".join(gene_func.split())
+
                                         if (
-                                            "smcogs" in gene_func.lower()
-                                            and "SMCOG" in gene_func
+                                            "smcogs" in gene_func_clean.lower()
+                                            and "SMCOG" in gene_func_clean
                                         ):
                                             # Extract SMCOG ID and description
-                                            smcog_match = gene_func.split("SMCOG")[1]
+                                            smcog_match = gene_func_clean.split(
+                                                "SMCOG"
+                                            )[1]
                                             if ":" in smcog_match:
                                                 smcog_id = (
                                                     "SMCOG" + smcog_match.split(":")[0]
@@ -320,54 +326,84 @@ def parse_antismash_gbk(
                                                     1
                                                 ].strip()
                                                 annotations.append(
-                                                    f"SMCOG\t{smcog_id}: {smcog_desc}"
+                                                    f"note\t{smcog_id}: {smcog_desc}"
                                                 )
 
-                                        # Extract biosynthetic functions
-                                        elif "biosynthetic" in gene_func.lower():
-                                            if "rule-based-clusters" in gene_func:
-                                                # Extract rule-based cluster info
-                                                parts = gene_func.split(")")
+                                        # Extract biosynthetic domain names for consolidation
+                                        elif "biosynthetic" in gene_func_clean.lower():
+                                            if "rule-based-clusters" in gene_func_clean:
+                                                # Extract domain name
+                                                parts = gene_func_clean.split(")")
                                                 if len(parts) >= 2:
-                                                    cluster_type = parts[0].split("(")[
-                                                        -1
-                                                    ]
-                                                    domain = (
+                                                    domain_name = (
                                                         parts[1].split(":")[-1].strip()
                                                     )
-                                                    annotations.append(
-                                                        f"biosynthetic_domain\t{cluster_type}: {domain}"
-                                                    )
-                                            elif "smcogs" in gene_func.lower():
-                                                # Already handled above
-                                                pass
-                                            else:
-                                                # Other biosynthetic annotations
-                                                annotations.append(
-                                                    f"biosynthetic\t{gene_func}"
-                                                )
+                                                    domains_found[domain_name] = {
+                                                        "source": "biosynthetic"
+                                                    }
 
-                                # Extract sec_met_domain information
+                                # Get detailed domain info from sec_met_domain and consolidate
                                 if "sec_met_domain" in feature_quals:
                                     for domain in feature_quals["sec_met_domain"]:
-                                        # Parse domain info: "domain_name (E-value: X, bitscore: Y, ...)"
-                                        if "(" in domain:
-                                            domain_name = domain.split("(")[0].strip()
-                                            domain_info = domain.split("(")[1].split(
-                                                ")"
-                                            )[0]
-                                            annotations.append(
-                                                f"sec_met_domain\t{domain_name} ({domain_info})"
-                                            )
+                                        domain_clean = " ".join(domain.split())
+                                        if "(" in domain_clean:
+                                            domain_name = domain_clean.split("(")[
+                                                0
+                                            ].strip()
+                                            domain_info = domain_clean.split("(")[
+                                                1
+                                            ].split(")")[0]
+                                            # Extract E-value for summary
+                                            evalue = "unknown"
+                                            if "E-value:" in domain_info:
+                                                evalue = (
+                                                    domain_info.split("E-value:")[1]
+                                                    .split(",")[0]
+                                                    .strip()
+                                                )
 
-                                # Extract NRPS_PKS domain information
+                                            # Store or update domain info
+                                            domains_found[domain_name] = {
+                                                "source": "sec_met",
+                                                "evalue": evalue,
+                                            }
+
+                                # Get NRPS/PKS domain information
                                 if "NRPS_PKS" in feature_quals:
                                     for nrps_pks in feature_quals["NRPS_PKS"]:
-                                        # Parse NRPS/PKS domain info
-                                        if "Domain:" in nrps_pks:
-                                            annotations.append(
-                                                f"NRPS_PKS_domain\t{nrps_pks}"
-                                            )
+                                        nrps_pks_clean = " ".join(nrps_pks.split())
+                                        if "Domain:" in nrps_pks_clean:
+                                            # Extract domain name: "Domain: PKS_KR (26-118). E-value: 7.5e-08..."
+                                            domain_part = nrps_pks_clean.split(
+                                                "Domain:"
+                                            )[1].strip()
+                                            domain_name = domain_part.split("(")[
+                                                0
+                                            ].strip()
+                                            # Extract E-value
+                                            evalue = "unknown"
+                                            if "E-value:" in nrps_pks_clean:
+                                                evalue = (
+                                                    nrps_pks_clean.split("E-value:")[1]
+                                                    .split(".")[0]
+                                                    .strip()
+                                                )
+
+                                            domains_found[domain_name] = {
+                                                "source": "NRPS_PKS",
+                                                "evalue": evalue,
+                                            }
+
+                                # Create consolidated domain annotations
+                                for domain_name, info in domains_found.items():
+                                    if "evalue" in info and info["evalue"] != "unknown":
+                                        annotations.append(
+                                            f"note\tantiSMASH domain: {domain_name} (E-value: {info['evalue']})"
+                                        )
+                                    else:
+                                        annotations.append(
+                                            f"note\tantiSMASH domain: {domain_name}"
+                                        )
 
                                 # Store all annotations for this gene
                                 if annotations:
@@ -378,9 +414,11 @@ def parse_antismash_gbk(
                                 # Check if this is a backbone enzyme (biosynthetic gene)
                                 if "gene_functions" in feature_quals:
                                     for gene_func in feature_quals["gene_functions"]:
+                                        # Clean up multi-line qualifiers
+                                        gene_func_clean = " ".join(gene_func.split())
                                         if (
-                                            "biosynthetic" in gene_func.lower()
-                                            and "rule-based-clusters" in gene_func
+                                            "biosynthetic" in gene_func_clean.lower()
+                                            and "rule-based-clusters" in gene_func_clean
                                         ):
                                             if cluster_id not in backbone_enzymes:
                                                 backbone_enzymes[cluster_id] = []
@@ -570,6 +608,10 @@ def antismash_subparser(subparsers):
         help="Path to GenBank file (.gbk or .gbff) (alternative to --input)",
     )
     input_group.add_argument(
+        "--parse",
+        help="Path to pre-computed antiSMASH GenBank output file to parse (skips running antiSMASH)",
+    )
+    input_group.add_argument(
         "-o", "--output", help="Output directory (default: input_dir/annotate_misc)"
     )
     input_group.add_argument(
@@ -579,7 +621,7 @@ def antismash_subparser(subparsers):
     # antiSMASH options
     antismash_group = parser.add_argument_group("antiSMASH options")
     antismash_group.add_argument(
-        "--cpu", type=int, default=1, help="Number of CPU cores to use"
+        "--cpus", type=int, default=1, help="Number of CPU cores to use"
     )
     antismash_group.add_argument(
         "--taxon",
@@ -687,9 +729,67 @@ def run_antismash_cli(args):
     Args:
         args: argparse arguments
     """
+    # Handle parse-only mode
+    if args.parse:
+        if not os.path.isfile(args.parse):
+            logger.error(f"Parse file not found: {args.parse}")
+            return
+
+        # Get output directory
+        if args.output:
+            output_dir = args.output
+        else:
+            # Use the directory of the parse file
+            output_dir = os.path.dirname(args.parse) or os.getcwd()
+
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+
+        logger.info(f"Parsing pre-computed antiSMASH results: {args.parse}")
+
+        # Parse antiSMASH results
+        annotations_file = os.path.join(output_dir, "antismash.annotations.txt")
+        clusters_file = os.path.join(output_dir, "antismash.clusters.txt")
+
+        result = parse_antismash_gbk(
+            input_file=args.parse,
+            output_dir=output_dir,
+            annotations_file=annotations_file,
+            clusters_file=clusters_file,
+        )
+        backbone_domains, _, _, cluster_genes = result
+
+        if backbone_domains is not None:
+            logger.info(f"Parsed {len(cluster_genes)} clusters from {args.parse}")
+            logger.info(f"Wrote annotations to {annotations_file}")
+            logger.info(f"Wrote cluster information to {clusters_file}")
+
+            # Extract individual cluster files if requested
+            if args.extract_clusters:
+                clusters_dir = os.path.join(output_dir, "clusters")
+                cluster_files = extract_clusters(args.parse, clusters_dir)
+                if cluster_files:
+                    logger.info(
+                        f"Extracted {len(cluster_files)} cluster files to {clusters_dir}"
+                    )
+
+            # Convert to JSON if requested
+            if args.json:
+                json_file = os.path.join(output_dir, "antismash.json")
+                if antismash_to_json(args.parse, json_file):
+                    logger.info(f"Wrote JSON cluster information to {json_file}")
+                else:
+                    logger.error(
+                        f"Failed to write JSON cluster information to {json_file}"
+                    )
+        else:
+            logger.error(f"Failed to parse clusters from {args.parse}")
+
+        return
+
     # Check if at least one input option is provided
     if not args.input and not args.file:
-        logger.error("Either --input or --file must be specified")
+        logger.error("Either --input, --file, or --parse must be specified")
         return
 
     # Get input file
@@ -733,7 +833,7 @@ def run_antismash_cli(args):
         input_file=input_file,
         output_dir=output_dir,
         antismash_path=args.antismash_path,
-        cpu=args.cpu,
+        cpu=args.cpus,
         taxon=args.taxon,
         fullhmmer=args.fullhmmer,
         cassis=args.cassis,

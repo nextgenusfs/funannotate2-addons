@@ -20,10 +20,8 @@ def main():
         run_iprscan_cli(args)
     elif args.subparser_name == "antismash":
         run_antismash_cli(args)
-    elif args.subparser_name == "signalp":
+    elif args.subparser_name == "signalp6":
         run_signalp_cli(args)
-    # elif args.subparser_name == 'update':
-    #    update(args)
 
 
 def parse_args(args):
