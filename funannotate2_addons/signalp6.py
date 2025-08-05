@@ -4,6 +4,7 @@ import os
 import subprocess
 import argparse
 import json
+import uuid
 from .log import startLogging
 from .utils import (
     parse_funannotate_predict_dir,
@@ -461,14 +462,16 @@ def run_signalp_cli(args):
     os.makedirs(output_dir, exist_ok=True)
 
     # Set output prefix for annotation files
-    output_prefix = os.path.join(output_dir, "signalp")
+    output_prefix = os.path.join(output_dir, "signalp6")
 
     # We'll use the module-level logger which is already initialized
+    working_dir = os.path.join(output_dir, f"signalp6_{str(uuid.uuid4())[:8]}")
+    os.makedirs(working_dir, exist_ok=True)
 
     # Run SignalP
     output_file = run_signalp(
         input_file=input_file,
-        output_dir=output_dir,
+        output_dir=working_dir,
         signalp_path=args.signalp_path,
         organism=args.organism,
         format=args.format,
@@ -496,7 +499,7 @@ def run_signalp_cli(args):
 
             # Convert to JSON if requested
             if args.json:
-                json_file = os.path.join(output_dir, "signalp.json")
+                json_file = os.path.join(output_dir, "signalp6.json")
                 if signalp_to_json(output_file, json_file):
                     logger.info(f"Wrote JSON predictions to {json_file}")
                 else:
