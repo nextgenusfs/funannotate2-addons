@@ -131,19 +131,19 @@ SignalP is a tool for predicting the presence and location of signal peptides in
 
 ```bash
 # Basic usage
-f2a siganlp6 -i /path/to/funannotate2_predict_folder
+f2a signalp6 -i /path/to/funannotate2_predict_folder
 
 # Specify output directory
-f2a siganlp6 -i /path/to/funannotate2_predict_folder -o /path/to/output_dir
+f2a signalp6 -i /path/to/funannotate2_predict_folder -o /path/to/output_dir
 
 # Specify organism group
-f2a siganlp6 -i /path/to/funannotate2_predict_folder --organism other
+f2a signalp6 -i /path/to/funannotate2_predict_folder --organism other
 
 # Generate plots
-f2a siganlp6 -i /path/to/funannotate2_predict_folder --plot
+f2a signalp6 -i /path/to/funannotate2_predict_folder --plot
 
 # Export predictions to JSON
-f2a siganlp6 -i /path/to/funannotate2_predict_folder --json
+f2a signalp6 -i /path/to/funannotate2_predict_folder --json
 ```
 
 The module will generate:
