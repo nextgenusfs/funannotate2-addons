@@ -93,7 +93,7 @@ def run_iprscan(
         "--input",
         input_file,
         "-o",
-        os.path.basename(f"{output_prefix}.{format.lower()}"),
+        f"{output_prefix}.{format.lower()}",
         "-f",
         format,
         "-cpu",
@@ -169,15 +169,32 @@ def parse_iprscan_xml(input_file, output_file=None, gene_dict=None):
         logger.error(f"Error parsing XML file: {e}")
         return None
 
-    # Define namespaces
-    ns = {"ns": "http://www.ebi.ac.uk/interpro/resources/schemas/interproscan5"}
+    # Detect namespace from the document so we can support current and older
+    # InterProScan XML schema URLs.
+    namespace = root.tag.split("}")[0].strip("{") if root.tag.startswith("{") else ""
+
+    def qname(tag):
+        return f"{{{namespace}}}{tag}" if namespace else tag
+
+    def unique_by_id(items, item_id):
+        return item_id not in [item["id"] for item in items]
 
     # Parse annotations
     annotations = {}
 
     # Iterate through protein matches
-    for protein in root.findall(".//ns:protein", ns):
+    for protein in root.findall(f".//{qname('protein')}"):
         protein_id = protein.attrib.get("id", "")
+        if not protein_id:
+            xref = protein.find(qname("xref"))
+            if xref is not None:
+                protein_id = xref.attrib.get("id", "")
+        if not protein_id:
+            sequence = protein.find(qname("sequence"))
+            if sequence is not None and sequence.text:
+                protein_id = sequence.text.strip()
+        if not protein_id:
+            continue
 
         if protein_id not in annotations:
             annotations[protein_id] = {
@@ -187,33 +204,40 @@ def parse_iprscan_xml(input_file, output_file=None, gene_dict=None):
                 "signatures": [],
             }
 
+        matches = protein.find(qname("matches"))
+        if matches is None:
+            continue
+
         # Get matches
-        for match in protein.findall(".//ns:match", ns):
-            signature = match.find(".//ns:signature", ns)
+        for match in matches:
+            if not match.tag.split("}")[-1].endswith("-match"):
+                continue
+
+            signature = match.find(qname("signature"))
             if signature is not None:
                 sig_acc = signature.attrib.get("ac", "")
                 sig_desc = signature.attrib.get("desc", "")
                 sig_name = signature.attrib.get("name", "")
 
                 # Add to signatures
-                if sig_acc and sig_acc not in [
-                    s["id"] for s in annotations[protein_id]["signatures"]
-                ]:
+                if sig_acc and unique_by_id(
+                    annotations[protein_id]["signatures"], sig_acc
+                ):
                     annotations[protein_id]["signatures"].append(
                         {"id": sig_acc, "name": sig_name, "description": sig_desc}
                     )
 
                 # Get InterPro domains
-                entry = match.find(".//ns:entry", ns)
+                entry = signature.find(qname("entry"))
                 if entry is not None:
                     entry_acc = entry.attrib.get("ac", "")
                     entry_desc = entry.attrib.get("desc", "")
                     entry_name = entry.attrib.get("name", "")
 
                     # Add to InterPro domains
-                    if entry_acc and entry_acc not in [
-                        d["id"] for d in annotations[protein_id]["interpro_domains"]
-                    ]:
+                    if entry_acc and unique_by_id(
+                        annotations[protein_id]["interpro_domains"], entry_acc
+                    ):
                         annotations[protein_id]["interpro_domains"].append(
                             {
                                 "id": entry_acc,
@@ -223,29 +247,35 @@ def parse_iprscan_xml(input_file, output_file=None, gene_dict=None):
                         )
 
                 # Get GO terms
-                for go_term in match.findall(".//ns:go-term", ns):
+                go_terms = signature.findall(f".//{qname('go-xref')}")
+                if not go_terms:
+                    go_terms = match.findall(f".//{qname('go-term')}")
+                for go_term in go_terms:
                     go_id = go_term.attrib.get("id", "")
                     go_name = go_term.attrib.get("name", "")
                     go_category = go_term.attrib.get("category", "")
 
                     # Add to GO terms
-                    if go_id and go_id not in [
-                        g["id"] for g in annotations[protein_id]["go_terms"]
-                    ]:
+                    if go_id and unique_by_id(
+                        annotations[protein_id]["go_terms"], go_id
+                    ):
                         annotations[protein_id]["go_terms"].append(
                             {"id": go_id, "name": go_name, "category": go_category}
                         )
 
                 # Get pathways
-                for pathway in match.findall(".//ns:pathway", ns):
+                pathways = signature.findall(f".//{qname('pathway-xref')}")
+                if not pathways:
+                    pathways = match.findall(f".//{qname('pathway')}")
+                for pathway in pathways:
                     pathway_id = pathway.attrib.get("id", "")
                     pathway_name = pathway.attrib.get("name", "")
                     pathway_db = pathway.attrib.get("db", "")
 
                     # Add to pathways
-                    if pathway_id and pathway_id not in [
-                        p["id"] for p in annotations[protein_id]["pathways"]
-                    ]:
+                    if pathway_id and unique_by_id(
+                        annotations[protein_id]["pathways"], pathway_id
+                    ):
                         annotations[protein_id]["pathways"].append(
                             {
                                 "id": pathway_id,
