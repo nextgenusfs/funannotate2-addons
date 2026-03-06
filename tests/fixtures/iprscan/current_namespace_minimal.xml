@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protein-matches xmlns="https://ftp.ebi.ac.uk/pub/software/unix/iprscan/5/schemas">
+    <protein>
+        <sequence md5="abc123">MSTNPKPQRIT</sequence>
+        <xref id="FUN2_000001-T1" name="FUN2_000001-T1 FUN2_000001"/>
+        <matches>
+            <hmmer3-match evalue="1.2E-15" score="15.2">
+                <signature ac="PF00001" desc="DNA binding domain" name="DNA_binding" type="DOMAIN">
+                    <entry ac="IPR000001" desc="DNA binding" name="DNA_binding" type="DOMAIN"/>
+                    <go-xrefs>
+                        <go-xref id="GO:0003677" name="DNA binding" category="molecular_function"/>
+                    </go-xrefs>
+                    <pathway-xrefs>
+                        <pathway-xref id="map00010" db="KEGG" name="Glycolysis"/>
+                    </pathway-xrefs>
+                </signature>
+                <locations>
+                    <hmmer3-location start="10" end="90" score="15.2" evalue="1.2E-15" representative="true"/>
+                </locations>
+            </hmmer3-match>
+        </matches>
+    </protein>
+</protein-matches>
