@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import unittest
 import sys
 from unittest import mock
@@ -9,6 +10,15 @@ from funannotate2_addons.__main__ import parse_args, main
 
 
 class TestCLI(unittest.TestCase):
+    def _assert_main_dispatch(self, subparser_name, patch_target):
+        args = argparse.Namespace(subparser_name=subparser_name)
+
+        with mock.patch("funannotate2_addons.__main__.parse_args", return_value=args):
+            with mock.patch(patch_target) as mock_runner:
+                main()
+
+        mock_runner.assert_called_once_with(args)
+
     def test_parse_args_no_args(self):
         """Test that no arguments raises SystemExit and prints help"""
         with self.assertRaises(SystemExit) as cm:
@@ -61,30 +71,24 @@ class TestCLI(unittest.TestCase):
     @mock.patch("funannotate2_addons.__main__.run_emapper_cli")
     def test_main_emapper(self, mock_run_emapper):
         """Test main function calls emapper CLI"""
-        with mock.patch("sys.argv", ["funannotate2_addons", "emapper", "--help"]):
-            with self.assertRaises(SystemExit):
-                main()
+        self._assert_main_dispatch("emapper", "funannotate2_addons.__main__.run_emapper_cli")
 
     @mock.patch("funannotate2_addons.__main__.run_iprscan_cli")
     def test_main_iprscan(self, mock_run_iprscan):
         """Test main function calls iprscan CLI"""
-        with mock.patch("sys.argv", ["funannotate2_addons", "iprscan", "--help"]):
-            with self.assertRaises(SystemExit):
-                main()
+        self._assert_main_dispatch("iprscan", "funannotate2_addons.__main__.run_iprscan_cli")
 
     @mock.patch("funannotate2_addons.__main__.run_antismash_cli")
     def test_main_antismash(self, mock_run_antismash):
         """Test main function calls antismash CLI"""
-        with mock.patch("sys.argv", ["funannotate2_addons", "antismash", "--help"]):
-            with self.assertRaises(SystemExit):
-                main()
+        self._assert_main_dispatch(
+            "antismash", "funannotate2_addons.__main__.run_antismash_cli"
+        )
 
     @mock.patch("funannotate2_addons.__main__.run_signalp_cli")
     def test_main_signalp6(self, mock_run_signalp):
         """Test main function calls signalp6 CLI"""
-        with mock.patch("sys.argv", ["funannotate2_addons", "signalp6", "--help"]):
-            with self.assertRaises(SystemExit):
-                main()
+        self._assert_main_dispatch("signalp6", "funannotate2_addons.__main__.run_signalp_cli")
 
 
 if __name__ == "__main__":
