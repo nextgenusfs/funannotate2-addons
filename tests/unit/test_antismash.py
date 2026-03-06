@@ -15,6 +15,13 @@ from funannotate2_addons.antismash import (
 )
 
 
+ANTISMASH_LOCAL_GBK = os.environ.get(
+    "FUNANNOTATE2_ADDONS_ANTISMASH_GBK",
+    "/Users/jon/software/f2_ecosystem/funannotate2-addons/local_tests/antismash_pverr/antismash_fe857478/Pseudogymnoascus_verrucosus.gbk",
+)
+HAS_ANTISMASH_LOCAL_GBK = os.path.exists(ANTISMASH_LOCAL_GBK)
+
+
 class TestAntismash(unittest.TestCase):
     def setUp(self):
         # Create a temporary directory for test files
@@ -151,6 +158,29 @@ class TestAntismash(unittest.TestCase):
         # Check cluster data structure
         clusters = data["clusters"]
         self.assertIsInstance(clusters, dict)
+
+
+@unittest.skipUnless(
+    HAS_ANTISMASH_LOCAL_GBK,
+    "local antiSMASH GenBank fixture not available",
+)
+class TestAntismashLocalFixtures(unittest.TestCase):
+    def test_parse_real_antismash_genbank_fixture(self):
+        backbone_domains, backbone_subtype, backbone_enzymes, cluster_genes = (
+            parse_antismash_gbk(ANTISMASH_LOCAL_GBK)
+        )
+
+        self.assertEqual(len(cluster_genes), 28)
+        self.assertEqual(backbone_subtype["cluster_1"], ["T1PKS"])
+        self.assertEqual(backbone_subtype["cluster_28"], ["terpene"])
+        self.assertEqual(len(cluster_genes["cluster_1"]), 30)
+        self.assertIn("FUN2_000393", cluster_genes["cluster_1"])
+        self.assertIn("FUN2_000393", backbone_enzymes["cluster_1"])
+        self.assertIn("FUN2_011547", backbone_enzymes["cluster_28"])
+
+        annotations = "\n".join(backbone_domains["FUN2_000393"])
+        self.assertIn("SMCOG1093", annotations)
+        self.assertIn("antiSMASH domain: itr_KS", annotations)
 
 
 if __name__ == "__main__":
