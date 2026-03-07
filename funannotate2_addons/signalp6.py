@@ -4,6 +4,7 @@ import os
 import subprocess
 import argparse
 import json
+import re
 import uuid
 from .log import startLogging
 from .utils import (
@@ -15,6 +16,82 @@ from .utils import (
 
 # Initialize logger at module level
 logger = startLogging()
+
+
+def _signalp_annotation_value(prediction):
+    """Format a standardized SignalP annotation value."""
+    cleavage_pos = prediction.get("cleavage_site")
+    if cleavage_pos and "-" in cleavage_pos:
+        return f"SignalP:1-{cleavage_pos.split('-')[0]}"
+    return f"SignalP:{prediction['prediction']}"
+
+
+def _write_signalp_annotations(output_file, predictions):
+    """Write standardized SignalP annotations."""
+    with open(output_file, "w") as out:
+        out.write("#gene_id\tannotation_type\tannotation_value\n")
+        for protein_id, pred in predictions.items():
+            if pred["has_signal_peptide"]:
+                annotation = _signalp_annotation_value(pred)
+                out.write(f"{protein_id}\tnote\t{annotation}\n")
+
+
+def _normalize_signalp_prediction(prediction):
+    """Normalize SignalP prediction labels across text and JSON outputs."""
+    prediction_map = {
+        "other": "OTHER",
+        "sp": "SP",
+        "signal peptide (sec/spi)": "SP",
+        "signal peptide": "SP",
+        "lipoprotein signal peptide (sec/spii)": "LIPO",
+        "tat signal peptide (tat/spi)": "TAT",
+        "tat lipoprotein signal peptide (tat/spii)": "TATLIPO",
+        "pilin-like signal peptide (sec/spiii)": "PILIN",
+        "pilin-like signal peptide": "PILIN",
+    }
+    normalized = prediction_map.get(str(prediction).strip().lower())
+    if normalized:
+        return normalized
+    return str(prediction).strip().upper()
+
+
+def _parse_signalp6_sequence_json_entry(entry):
+    """Parse a real SignalP 6 JSON SEQUENCES entry."""
+    protein_id = entry["Name"]
+    prediction = _normalize_signalp_prediction(entry["Prediction"])
+    protein_types = entry.get("Protein_types", [])
+    likelihoods = entry.get("Likelihood", [])
+
+    probabilities = {}
+    for label, value in zip(protein_types, likelihoods):
+        probabilities[_normalize_signalp_prediction(label)] = float(value)
+
+    parsed = {
+        "prediction": prediction,
+        "probability": probabilities.get(
+            prediction,
+            max((float(value) for value in likelihoods), default=0.0),
+        ),
+        "has_signal_peptide": prediction != "OTHER",
+    }
+
+    if "OTHER" in probabilities:
+        parsed["other_prob"] = probabilities["OTHER"]
+    if "SP" in probabilities:
+        parsed["sp_prob"] = probabilities["SP"]
+
+    cleavage_info = str(entry.get("CS_pos", "")).strip()
+    if cleavage_info:
+        match = re.search(
+            r"Cleavage site between pos\.\s*(\d+)\s+and\s+(\d+)(?:\.\s*Probability\s*([0-9.]+))?",
+            cleavage_info,
+        )
+        if match:
+            parsed["cleavage_site"] = f"{match.group(1)}-{match.group(2)}"
+            if match.group(3):
+                parsed["cleavage_prob"] = float(match.group(3))
+
+    return protein_id, parsed
 
 
 def get_version(signalp_path):
@@ -197,26 +274,7 @@ def parse_signalp(input_file, output_file=None, gene_dict=None):
 
         # Write to output file if specified
         if output_file:
-            with open(output_file, "w") as out:
-                # Write header
-                out.write("#gene_id\tannotation_type\tannotation_value\n")
-
-                for protein_id, pred in predictions.items():
-                    if pred["has_signal_peptide"]:
-                        if "cleavage_site" in pred:
-                            # Extract the cleavage position to determine signal peptide range
-                            # CS pos: 17-18 means cleavage between 17 and 18, so signal peptide is 1-17
-                            cleavage_pos = pred["cleavage_site"]
-                            if "-" in cleavage_pos:
-                                end_pos = cleavage_pos.split("-")[
-                                    0
-                                ]  # Take the first number
-                                annotation = f"SignalP:1-{end_pos}"
-                            else:
-                                annotation = f"SignalP:{pred['prediction']}"
-                        else:
-                            annotation = f"SignalP:{pred['prediction']}"
-                        out.write(f"{protein_id}\tnote\t{annotation}\n")
+            _write_signalp_annotations(output_file, predictions)
 
         return predictions
 
@@ -249,36 +307,34 @@ def parse_signalp_json(input_file, output_file=None, gene_dict=None):
         with open(input_file, "r") as f:
             data = json.load(f)
 
-            for entry in data:
-                protein_id = entry["ID"]
-                prediction = entry["PREDICTION"]
-                probability = float(entry["PROB"])
+            if isinstance(data, list):
+                entries = data
+                real_signalp6_json = False
+            elif isinstance(data, dict) and isinstance(data.get("SEQUENCES"), dict):
+                entries = data["SEQUENCES"].values()
+                real_signalp6_json = True
+            else:
+                raise ValueError("Unsupported SignalP JSON format")
 
-                # Store prediction
-                predictions[protein_id] = {
-                    "prediction": prediction,
-                    "probability": probability,
-                    "has_signal_peptide": prediction != "OTHER",
-                }
+            for entry in entries:
+                if real_signalp6_json:
+                    protein_id, parsed = _parse_signalp6_sequence_json_entry(entry)
+                else:
+                    protein_id = entry["ID"]
+                    prediction = _normalize_signalp_prediction(entry["PREDICTION"])
+                    parsed = {
+                        "prediction": prediction,
+                        "probability": float(entry["PROB"]),
+                        "has_signal_peptide": prediction != "OTHER",
+                    }
+                    if "CS_POS" in entry and entry["CS_POS"] != "-":
+                        parsed["cleavage_site"] = entry["CS_POS"]
 
-                # Add cleavage site if available
-                if "CS_POS" in entry and entry["CS_POS"] != "-":
-                    predictions[protein_id]["cleavage_site"] = entry["CS_POS"]
+                predictions[protein_id] = parsed
 
         # Write to output file if specified
         if output_file:
-            with open(output_file, "w") as out:
-                # Write header
-                out.write("#gene_id\tannotation_type\tannotation_value\n")
-
-                for protein_id, pred in predictions.items():
-                    if pred["has_signal_peptide"]:
-                        out.write(
-                            f"{protein_id}\tnote\tSignalP:{pred['prediction']} prob={pred['probability']:.3f}"
-                        )
-                        if "cleavage_site" in pred:
-                            out.write(f" cleavage_site={pred['cleavage_site']}")
-                        out.write("\n")
+            _write_signalp_annotations(output_file, predictions)
 
         return predictions
 
@@ -417,7 +473,8 @@ def run_signalp_cli(args):
 
         # Parse SignalP results
         annotations_file = os.path.join(output_dir, "signalp.annotations.txt")
-        predictions = parse_signalp(args.parse, output_file=annotations_file)
+        parser = parse_signalp_json if args.parse.endswith(".json") else parse_signalp
+        predictions = parser(args.parse, output_file=annotations_file)
 
         if predictions:
             logger.info(f"Parsed {len(predictions)} predictions from {args.parse}")

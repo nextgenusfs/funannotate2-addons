@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import os
 import unittest
 from unittest import mock
@@ -11,6 +12,7 @@ from funannotate2_addons.emapper import (
     get_version,
     parse_emapper_annotations,
     emapper_to_json,
+    run_emapper_cli,
 )
 
 
@@ -98,6 +100,85 @@ class TestEmapper(unittest.TestCase):
         self.assertEqual(data["gene1"]["ec_number"], "3.6.4.13")
         self.assertEqual(data["gene2"]["gene_name"], "geneB")
         self.assertEqual(data["gene2"]["description"], "Transcription factor")
+
+    @mock.patch("funannotate2_addons.emapper.logger.error")
+    @mock.patch("funannotate2_addons.emapper.get_input_file", return_value=None)
+    def test_run_emapper_cli_missing_input_file(self, mock_get_input_file, mock_logger):
+        args = mock.Mock(input="predict_dir", file=None, parse=None)
+
+        run_emapper_cli(args)
+
+        mock_get_input_file.assert_called_once_with(args, "proteins")
+        mock_logger.assert_called_once_with("No protein FASTA file found")
+
+    @mock.patch("funannotate2_addons.emapper.startLogging")
+    @mock.patch("funannotate2_addons.emapper.parse_emapper_annotations")
+    @mock.patch("funannotate2_addons.emapper.run_emapper")
+    @mock.patch("funannotate2_addons.emapper.get_input_file")
+    def test_run_emapper_cli_uses_stable_output_prefix(
+        self,
+        mock_get_input_file,
+        mock_run_emapper,
+        mock_parse_annotations,
+        mock_start_logging,
+    ):
+        input_file = os.path.join(self.test_dir, "proteins.fa")
+        with open(input_file, "w") as f:
+            f.write(">gene1\nMSTNPKPQRIT\n")
+
+        output_dir = os.path.join(self.test_dir, "output")
+        expected_prefix = os.path.join(output_dir, "emapper")
+        mock_get_input_file.return_value = input_file
+        mock_run_emapper.return_value = f"{expected_prefix}.emapper.annotations"
+        mock_parse_annotations.return_value = {"gene1": {"gene_name": "geneA"}}
+        mock_start_logging.return_value = mock.Mock()
+
+        args = argparse.Namespace(
+            input="predict_dir",
+            file=None,
+            parse=None,
+            output=output_dir,
+            emapper_path="emapper.py",
+            cpus=4,
+            database=None,
+            data_dir=None,
+            temp_dir=None,
+            resume=True,
+            override=False,
+            mode="diamond",
+            tax_scope="auto",
+            target_orthologs="all",
+            sensmode="sensitive",
+            no_annot=False,
+            no_search=False,
+            dmnd_db=None,
+            seed_orthologs=None,
+            report_orthologs=False,
+            go_evidence=None,
+            pfam_realign=False,
+            seed_ortholog_score=None,
+            seed_ortholog_evalue=None,
+            query_cover=None,
+            subject_cover=None,
+            matrix=None,
+            gapopen=None,
+            gapextend=None,
+            evalue=None,
+            pident=None,
+            query_sgcov=None,
+            subject_sgcov=None,
+            json=False,
+        )
+
+        run_emapper_cli(args)
+
+        self.assertTrue(os.path.isdir(output_dir))
+        self.assertEqual(mock_run_emapper.call_args.kwargs["output_prefix"], expected_prefix)
+        self.assertTrue(mock_run_emapper.call_args.kwargs["resume"])
+        mock_parse_annotations.assert_called_once_with(
+            f"{expected_prefix}.emapper.annotations",
+            output_file=f"{expected_prefix}.annotations.txt",
+        )
 
 
 if __name__ == "__main__":

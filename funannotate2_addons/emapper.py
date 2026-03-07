@@ -2,7 +2,6 @@
 
 import os
 import sys
-import uuid
 import subprocess
 import argparse
 import json
@@ -905,7 +904,7 @@ def run_emapper_cli(args):
     input_file = get_input_file(args, "proteins") if args.input else args.file
 
     if not input_file:
-        log.error("No protein FASTA file found")
+        logger.error("No protein FASTA file found")
         return
 
     # Get output directory
@@ -922,8 +921,8 @@ def run_emapper_cli(args):
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
-    # Set output prefix
-    output_prefix = os.path.join(output_dir, f"emapper_{uuid.uuid4().hex[:6]}")
+    # Use a stable prefix so repeated runs can reuse the same output set.
+    output_prefix = os.path.join(output_dir, "emapper")
 
     # Set up logging
     log_file = f"{output_prefix}.log"

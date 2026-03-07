@@ -11,9 +11,22 @@ import subprocess
 
 from funannotate2_addons.iprscan import (
     get_version,
+    run_iprscan,
+    parse_iprscan,
     parse_iprscan_tsv,
     parse_iprscan_xml,
     iprscan_to_json,
+)
+
+
+CURRENT_NAMESPACE_XML_FIXTURE = os.path.abspath(
+    os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "fixtures",
+        "iprscan",
+        "current_namespace_minimal.xml",
+    )
 )
 
 
@@ -103,6 +116,29 @@ class TestIprscan(unittest.TestCase):
         version = get_version("interproscan.sh")
         self.assertIsNone(version)
 
+    @mock.patch("subprocess.run")
+    def test_run_iprscan_uses_full_output_path(self, mock_run):
+        input_file = os.path.join(self.test_dir, "proteins.fa")
+        with open(input_file, "w") as f:
+            f.write(">protein1\nMSTNPKPQRIT\n")
+
+        output_prefix = os.path.join(self.test_dir, "iprscan_out", "iprscan")
+        os.makedirs(os.path.dirname(output_prefix), exist_ok=True)
+        expected_output = f"{output_prefix}.xml"
+
+        def fake_run(cmd, **kwargs):
+            with open(expected_output, "w") as out:
+                out.write("<protein-matches />")
+            return mock.Mock(returncode=0)
+
+        mock_run.side_effect = fake_run
+
+        result = run_iprscan(input_file=input_file, output_prefix=output_prefix)
+
+        self.assertEqual(result, expected_output)
+        called_cmd = mock_run.call_args.args[0]
+        self.assertEqual(called_cmd[called_cmd.index("-o") + 1], expected_output)
+
     def test_parse_iprscan_tsv(self):
         # Test parsing the sample TSV file
         annotations = parse_iprscan_tsv(self.sample_tsv_file)
@@ -148,26 +184,23 @@ class TestIprscan(unittest.TestCase):
         # Test parsing the sample XML file
         annotations = parse_iprscan_xml(self.sample_xml_file)
 
-        # Check that annotations were parsed correctly
-        self.assertIsInstance(annotations, dict)
-        self.assertTrue(len(annotations) > 0)
+        self.assertIn("protein1", annotations)
+        self.assertIn("protein2", annotations)
+        self.assertEqual(annotations["protein1"]["signatures"][0]["id"], "PF00001")
+        self.assertEqual(
+            annotations["protein1"]["interpro_domains"][0]["id"], "IPR000001"
+        )
+        self.assertEqual(annotations["protein1"]["go_terms"][0]["id"], "GO:0003677")
 
-        # Check that we have protein entries
-        protein_ids = list(annotations.keys())
-        self.assertTrue(len(protein_ids) > 0)
+    def test_parse_iprscan_xml_current_namespace_and_xref(self):
+        annotations = parse_iprscan_xml(CURRENT_NAMESPACE_XML_FIXTURE)
 
-        # Check the structure of the first protein
-        first_protein = annotations[protein_ids[0]]
-        self.assertIn("signatures", first_protein)
-        self.assertIn("interpro_domains", first_protein)
-        self.assertIn("go_terms", first_protein)
-        self.assertIn("pathways", first_protein)
-
-        # Check that signatures are present
-        self.assertIsInstance(first_protein["signatures"], list)
-        self.assertIsInstance(first_protein["interpro_domains"], list)
-        self.assertIsInstance(first_protein["go_terms"], list)
-        self.assertIsInstance(first_protein["pathways"], list)
+        self.assertIn("FUN2_000001-T1", annotations)
+        protein = annotations["FUN2_000001-T1"]
+        self.assertEqual(protein["signatures"][0]["id"], "PF00001")
+        self.assertEqual(protein["interpro_domains"][0]["id"], "IPR000001")
+        self.assertEqual(protein["go_terms"][0]["id"], "GO:0003677")
+        self.assertEqual(protein["pathways"][0]["id"], "map00010")
 
     def test_iprscan_to_json(self):
         # Test converting TSV to JSON
@@ -193,6 +226,39 @@ class TestIprscan(unittest.TestCase):
         self.assertIn("signatures", protein1_data)
         self.assertIn("interpro_domains", protein1_data)
         self.assertIn("go_terms", protein1_data)
+
+    @mock.patch("funannotate2_addons.iprscan.parse_iprscan_xml")
+    def test_parse_iprscan_dispatches_xml(self, mock_parse_xml):
+        expected = {"protein1": {}}
+        mock_parse_xml.return_value = expected
+
+        result = parse_iprscan(self.sample_xml_file)
+
+        self.assertEqual(result, expected)
+        mock_parse_xml.assert_called_once_with(self.sample_xml_file, None, None)
+
+    @mock.patch("funannotate2_addons.iprscan.parse_iprscan_tsv")
+    def test_parse_iprscan_dispatches_tsv(self, mock_parse_tsv):
+        expected = {"protein1": {}}
+        mock_parse_tsv.return_value = expected
+
+        result = parse_iprscan(self.sample_tsv_file)
+
+        self.assertEqual(result, expected)
+        mock_parse_tsv.assert_called_once_with(self.sample_tsv_file, None, None)
+
+    @mock.patch("funannotate2_addons.iprscan.logger.error")
+    def test_parse_iprscan_rejects_unsupported_extension(self, mock_logger):
+        unsupported_file = os.path.join(self.test_dir, "sample.txt")
+        with open(unsupported_file, "w") as f:
+            f.write("unsupported")
+
+        result = parse_iprscan(unsupported_file)
+
+        self.assertIsNone(result)
+        mock_logger.assert_called_once_with(
+            f"Unsupported file format: {unsupported_file}"
+        )
 
 
 if __name__ == "__main__":

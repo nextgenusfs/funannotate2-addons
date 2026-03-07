@@ -5,14 +5,32 @@ import tempfile
 import shutil
 import os
 import json
+import argparse
 import subprocess
 from unittest import mock
 
 from funannotate2_addons.signalp6 import (
     get_version,
     parse_signalp,
+    parse_signalp_json,
     signalp_to_json,
     run_signalp,
+    run_signalp_cli,
+)
+
+
+SIGNALP6_LOCAL_ROOT = os.environ.get(
+    "FUNANNOTATE2_ADDONS_SIGNALP6_LOCAL",
+    "/Users/jon/software/f2_ecosystem/funannotate2-addons/local_tests/signalp6_test",
+)
+SIGNALP6_LOCAL_TXT = os.path.join(SIGNALP6_LOCAL_ROOT, "test2", "prediction_results.txt")
+SIGNALP6_LOCAL_JSON = os.path.join(SIGNALP6_LOCAL_ROOT, "test2", "output.json")
+SIGNALP6_LOCAL_ANNOTATIONS = os.path.join(
+    SIGNALP6_LOCAL_ROOT, "test3", "signalp.annotations.txt"
+)
+HAS_SIGNALP6_LOCAL_FIXTURES = all(
+    os.path.exists(path)
+    for path in (SIGNALP6_LOCAL_TXT, SIGNALP6_LOCAL_JSON, SIGNALP6_LOCAL_ANNOTATIONS)
 )
 
 
@@ -30,6 +48,16 @@ class TestSignalp6(unittest.TestCase):
             f.write("protein2\tSP\t0.000229\t0.999747\tCS pos: 17-18. Pr: 0.9751\n")
             f.write("protein3\tSP\t0.007633\t0.992322\tCS pos: 23-24. Pr: 0.6512\n")
             f.write("protein4\tOTHER\t1.000045\t0.000000\t\n")
+
+        self.sample_json_file = os.path.join(self.test_dir, "prediction_results.json")
+        with open(self.sample_json_file, "w") as f:
+            json.dump(
+                [
+                    {"ID": "protein1", "PREDICTION": "OTHER", "PROB": "0.998", "CS_POS": "-"},
+                    {"ID": "protein2", "PREDICTION": "SP", "PROB": "0.999", "CS_POS": "17-18"},
+                ],
+                f,
+            )
 
         # Create a sample protein FASTA file
         self.sample_fasta_file = os.path.join(self.test_dir, "proteins.fasta")
@@ -151,6 +179,33 @@ class TestSignalp6(unittest.TestCase):
         self.assertTrue(protein2_data["has_signal_peptide"])
         self.assertEqual(protein2_data["cleavage_site"], "17-18")
 
+    def test_parse_signalp_json(self):
+        predictions = parse_signalp_json(self.sample_json_file)
+
+        self.assertIn("protein1", predictions)
+        self.assertIn("protein2", predictions)
+        self.assertFalse(predictions["protein1"]["has_signal_peptide"])
+        self.assertTrue(predictions["protein2"]["has_signal_peptide"])
+        self.assertEqual(predictions["protein2"]["cleavage_site"], "17-18")
+
+    def test_run_signalp_cli_parse_json(self):
+        output_dir = os.path.join(self.test_dir, "signalp_json_output")
+        args = argparse.Namespace(parse=self.sample_json_file, output=output_dir, json=True)
+
+        run_signalp_cli(args)
+
+        annotations_file = os.path.join(output_dir, "signalp.annotations.txt")
+        json_file = os.path.join(output_dir, "signalp.json")
+
+        self.assertTrue(os.path.exists(annotations_file))
+        self.assertTrue(os.path.exists(json_file))
+
+        with open(annotations_file, "r") as f:
+            annotations = f.read()
+
+        self.assertIn("protein2\tnote\tSignalP:1-17", annotations)
+
+
     @mock.patch("subprocess.run")
     @mock.patch("funannotate2_addons.signalp6.log_command")
     def test_run_signalp(self, mock_log_command, mock_run):
@@ -188,6 +243,47 @@ class TestSignalp6(unittest.TestCase):
         self.assertIn(self.sample_fasta_file, call_args)
         self.assertIn("--output_dir", call_args)
         self.assertIn(output_dir, call_args)
+
+
+@unittest.skipUnless(
+    HAS_SIGNALP6_LOCAL_FIXTURES,
+    "local SignalP6 fixtures not available",
+)
+class TestSignalp6LocalFixtures(unittest.TestCase):
+    def test_parse_real_signalp_tabular_fixture(self):
+        predictions = parse_signalp(SIGNALP6_LOCAL_TXT)
+
+        self.assertEqual(len(predictions), 65)
+        self.assertFalse(predictions["FUN2_000001-T1 FUN2_000001"]["has_signal_peptide"])
+
+        protein = predictions["FUN2_000014-T1 FUN2_000014"]
+        self.assertEqual(protein["prediction"], "SP")
+        self.assertAlmostEqual(protein["probability"], 0.999747, places=6)
+        self.assertEqual(protein["cleavage_site"], "17-18")
+        self.assertAlmostEqual(protein["cleavage_prob"], 0.9751, places=4)
+
+    def test_parse_real_signalp_json_fixture_matches_expected_annotations(self):
+        output_file = os.path.join(
+            tempfile.mkdtemp(), "signalp_from_real_json.annotations.txt"
+        )
+        try:
+            predictions = parse_signalp_json(SIGNALP6_LOCAL_JSON, output_file=output_file)
+
+            self.assertEqual(len(predictions), 65)
+            self.assertFalse(predictions["FUN2_000001-T1 FUN2_000001"]["has_signal_peptide"])
+
+            protein = predictions["FUN2_000014-T1 FUN2_000014"]
+            self.assertEqual(protein["prediction"], "SP")
+            self.assertAlmostEqual(protein["probability"], 0.9997, places=4)
+            self.assertEqual(protein["cleavage_site"], "17-18")
+            self.assertAlmostEqual(protein["cleavage_prob"], 0.975137, places=6)
+
+            with open(output_file, "r") as observed, open(
+                SIGNALP6_LOCAL_ANNOTATIONS, "r"
+            ) as expected:
+                self.assertEqual(observed.read(), expected.read())
+        finally:
+            shutil.rmtree(os.path.dirname(output_file))
 
 
 if __name__ == "__main__":
