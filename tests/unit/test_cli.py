@@ -6,7 +6,7 @@ import sys
 from unittest import mock
 from io import StringIO
 
-from funannotate2_addons.__main__ import parse_args, main
+from funannotate2_addons.__main__ import __version__, parse_args, main
 
 
 class TestCLI(unittest.TestCase):
@@ -34,11 +34,13 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(cm.exception.code, 0)
 
     def test_parse_args_version(self):
-        """Test that --version raises SystemExit"""
+        """Test that --version prints the current package version"""
         with self.assertRaises(SystemExit) as cm:
-            with mock.patch("sys.stdout", new_callable=StringIO):
+            with mock.patch("sys.stdout", new_callable=StringIO) as mock_stdout:
                 parse_args(["--version"])
         self.assertEqual(cm.exception.code, 0)
+        self.assertIn("funannotate2_addons", mock_stdout.getvalue())
+        self.assertIn(__version__, mock_stdout.getvalue())
 
     def test_parse_args_emapper(self):
         """Test parsing emapper subcommand"""
